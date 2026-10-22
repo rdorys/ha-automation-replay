@@ -68,27 +68,54 @@ def _get_automation_component(hass: HomeAssistant) -> Any | None:
     return hass.data.get(AUTOMATION_DOMAIN)
 
 
+def _normalize_runs(bucket: Any) -> tuple[Any, Any | None]:
+    """Return (runs, not_triggered) mappings for old and new trace stores.
+
+    HA 2024+ wraps per-item traces in a ``TraceBuckets`` dataclass with ``runs``
+    and ``not_triggered`` ``LimitedSizeDict``s. Older versions stored the
+    run-id -> trace mapping directly.
+    """
+    runs = getattr(bucket, "runs", None)
+    if runs is not None:
+        return runs, getattr(bucket, "not_triggered", None)
+    return bucket, None
+
+
 def _extract_trigger(trace: Any) -> Any | None:
-    """Pull the trigger payload out of a stored trace object."""
+    """Pull the full trigger payload out of a stored trace object.
+
+    Home Assistant records the initial automation variables — including the
+    ``trigger`` object, with real ``State`` objects for ``from_state`` /
+    ``to_state`` — as a dedicated trace step at path ``trigger`` or
+    ``trigger/<idx>`` (its ``changed_variables``).
+    """
     try:
         extended = trace.as_extended_dict()
-    except Exception:  # noqa: BLE001 - be defensive about trace internals
-        extended = {}
+    except Exception:  # noqa: BLE001 - defensive about trace internals
+        return None
 
-    # Preferred: the run variables captured for this trace.
-    variables = extended.get("variables")
-    if isinstance(variables, dict) and variables.get("trigger") is not None:
-        return variables["trigger"]
+    steps = extended.get("trace") or {}
 
-    # Fallback 1: a dict trigger at the root (not the short string description).
-    root_trigger = extended.get("trigger")
-    if isinstance(root_trigger, dict):
-        return root_trigger
+    def _trigger_in(elements: Any) -> Any | None:
+        for element in elements or []:
+            if isinstance(element, dict):
+                trig = (element.get("changed_variables") or {}).get("trigger")
+                if isinstance(trig, dict):
+                    return trig
+        return None
 
-    # Fallback 2: read the private attribute directly.
-    private_vars = getattr(trace, "_variables", None)
-    if isinstance(private_vars, dict) and private_vars.get("trigger") is not None:
-        return private_vars["trigger"]
+    # Preferred: the dedicated trigger step.
+    for path, elements in steps.items():
+        if path == "trigger" or path.startswith("trigger/"):
+            trig = _trigger_in(elements)
+            if trig is not None:
+                return trig
+
+    # Fallback: any step carrying a trigger in its changed variables.
+    for elements in steps.values():
+        trig = _trigger_in(elements)
+        if trig is not None:
+            return trig
 
     return None
 
@@ -102,22 +129,29 @@ def _trigger_from_trace(
         raise ServiceValidationError("No traces are stored yet.")
 
     key = f"{AUTOMATION_DOMAIN}.{item_id}"
-    traces = store.get(key)
-    if not traces:
+    bucket = store.get(key)
+    if bucket is None:
         raise ServiceValidationError(
             f"No traces found for '{key}'. The automation must have run at "
             "least once (and keep traces) before it can be replayed."
         )
 
+    runs, not_triggered = _normalize_runs(bucket)
+
     if run_id is None:
-        run_id = list(traces)[-1]  # newest, insertion-ordered
-        trace = traces[run_id]
+        run_ids = list(runs)  # newest last (insertion-ordered)
+        if not run_ids:
+            raise ServiceValidationError(f"No run traces found for '{key}'.")
+        run_id = run_ids[-1]
+        trace = runs[run_id]
     else:
-        trace = traces.get(run_id)
+        trace = runs.get(run_id)
+        if trace is None and not_triggered is not None:
+            trace = not_triggered.get(run_id)
         if trace is None:
-            available = ", ".join(traces) or "none"
+            available = ", ".join(list(runs)) or "none"
             raise ServiceValidationError(
-                f"run_id '{run_id}' not found for '{key}'. Available: {available}"
+                f"run_id '{run_id}' not found for '{key}'. Available runs: {available}"
             )
 
     trigger = _extract_trigger(trace)
