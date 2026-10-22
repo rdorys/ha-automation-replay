@@ -9,9 +9,15 @@ rejeu d'un événement raté).
 
 ## Installation (HACS)
 
-1. HACS → Intégrations → menu ⋮ → *Dépôts personnalisés*
-2. Ajouter `rdorys/ha-automation-replay`, catégorie **Integration**
-3. Installer **Automation Replay**, puis **redémarrer** Home Assistant
+[![Ouvrir votre instance Home Assistant et ajouter ce dépôt à HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=rdorys&repository=ha-automation-replay&category=integration)
+
+1. Cliquez sur le bouton ci-dessus (**Add repository to HACS**), ou ajoutez
+   manuellement `rdorys/ha-automation-replay` via HACS → menu ⋮ →
+   *Dépôts personnalisés*, catégorie **Integration**.
+2. Installez **Automation Replay**.
+3. **Redémarrez** Home Assistant.
+4. Ajoutez l'intégration via *Paramètres → Appareils & services → Ajouter une
+   intégration → Automation Replay* (zéro configuration).
 
 ## Utilisation
 
