@@ -1,0 +1,41 @@
+replay:
+  name: Replay automation trigger
+  description: >-
+    Re-run an automation using the trigger captured in one of its stored
+    traces (or a custom trigger payload). Note: only the trigger variable is
+    restored — conditions and actions still read the current world state.
+  fields:
+    entity_id:
+      name: Automation
+      description: The automation to replay.
+      required: true
+      selector:
+        entity:
+          domain: automation
+    run_id:
+      name: Trace run ID
+      description: >-
+        The trace to take the trigger from. Leave empty to use the most recent
+        trace. Ignored when a custom 'trigger' is provided.
+      required: false
+      example: 0b873bb037bb0944339f143460bd3f50
+      selector:
+        text:
+    trigger:
+      name: Custom trigger payload
+      description: >-
+        Optional. A trigger object to inject instead of reading one from a
+        trace, e.g. {"platform": "state", "entity_id": "switch.x",
+        "from_state": "on", "to_state": "off"}.
+      required: false
+      selector:
+        object:
+    skip_condition:
+      name: Skip conditions
+      description: >-
+        Skip the automation's conditions, like the built-in "Run" button.
+        Turn off to also evaluate the conditions against the current state.
+      required: false
+      default: true
+      selector:
+        boolean:
