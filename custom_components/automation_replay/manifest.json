@@ -1,11 +1,12 @@
 {
   "domain": "automation_replay",
   "name": "Automation Replay",
-  "version": "0.1.0",
-  "documentation": "https://github.com/romain/automation_replay",
-  "issue_tracker": "https://github.com/romain/automation_replay/issues",
+  "version": "0.1.1",
+  "documentation": "https://github.com/rdorys/ha-traces-replay",
+  "issue_tracker": "https://github.com/rdorys/ha-traces-replay/issues",
+  "config_flow": true,
   "dependencies": ["automation", "trace"],
-  "codeowners": [],
+  "codeowners": ["@rdorys"],
   "iot_class": "local_push",
   "integration_type": "service"
 }

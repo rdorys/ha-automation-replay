@@ -5,7 +5,9 @@ stored traces — the thing the native "Run" button throws away — or with a
 custom trigger payload you pass in by hand.
 
 v1 scope (intentionally small, no impact on existing automations):
-  - no entity, no config entry: a single service `automation_replay.replay`
+  - no polling, no entities: a single service `automation_replay.replay`,
+    activated via a (zero-config) config entry so it loads without editing
+    configuration.yaml
   - it only re-injects the `trigger` variable; it does NOT restore the original
     run context, nor the world state at the time of the trace
   - meant for rare, manual use from Developer Tools -> Actions
@@ -18,6 +20,7 @@ from typing import Any
 
 import voluptuous as vol
 
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import (
     HomeAssistant,
     ServiceCall,
@@ -28,10 +31,9 @@ from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 
-_LOGGER = logging.getLogger(__name__)
+from .const import DOMAIN, SERVICE_REPLAY
 
-DOMAIN = "automation_replay"
-SERVICE_REPLAY = "replay"
+_LOGGER = logging.getLogger(__name__)
 
 ATTR_ENTITY_ID = "entity_id"
 ATTR_RUN_ID = "run_id"
@@ -126,64 +128,90 @@ def _trigger_from_trace(
     return run_id, trigger
 
 
-async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Register the replay service."""
+async def _async_replay(hass: HomeAssistant, call: ServiceCall) -> ServiceResponse:
+    """Handle the automation_replay.replay service call."""
+    entity_id = call.data[ATTR_ENTITY_ID]
 
-    async def _async_replay(call: ServiceCall) -> ServiceResponse:
-        entity_id = call.data[ATTR_ENTITY_ID]
+    component = _get_automation_component(hass)
+    if component is None:
+        raise HomeAssistantError("The automation integration is not loaded.")
 
-        component = _get_automation_component(hass)
-        if component is None:
-            raise HomeAssistantError("The automation integration is not loaded.")
+    entity = component.get_entity(entity_id)
+    if entity is None:
+        raise ServiceValidationError(f"Unknown automation: {entity_id}")
 
-        entity = component.get_entity(entity_id)
-        if entity is None:
-            raise ServiceValidationError(f"Unknown automation: {entity_id}")
+    custom_trigger = call.data.get(ATTR_TRIGGER)
+    used_run_id: str | None = None
 
-        custom_trigger = call.data.get(ATTR_TRIGGER)
-        used_run_id: str | None = None
-
-        if custom_trigger is not None:
-            # Explicit payload wins over any trace lookup.
-            trigger = custom_trigger
-        else:
-            item_id = entity.unique_id
-            if item_id is None:
-                raise ServiceValidationError(
-                    f"{entity_id} has no id, so its traces can't be looked up. "
-                    "Pass a 'trigger' payload explicitly instead."
-                )
-            used_run_id, trigger = _trigger_from_trace(
-                hass, item_id, call.data.get(ATTR_RUN_ID)
+    if custom_trigger is not None:
+        # Explicit payload wins over any trace lookup.
+        trigger = custom_trigger
+    else:
+        item_id = entity.unique_id
+        if item_id is None:
+            raise ServiceValidationError(
+                f"{entity_id} has no id, so its traces can't be looked up. "
+                "Pass a 'trigger' payload explicitly instead."
             )
-
-        _LOGGER.info(
-            "Replaying %s (trigger source: %s), skip_condition=%s",
-            entity_id,
-            used_run_id or "custom payload",
-            call.data[ATTR_SKIP_CONDITION],
+        used_run_id, trigger = _trigger_from_trace(
+            hass, item_id, call.data.get(ATTR_RUN_ID)
         )
 
-        # Exactly what automation.trigger does internally, but with a real
-        # trigger payload instead of an empty one. The service call's own
-        # context is reused so the replay stays traceable to whoever invoked it.
-        await entity.async_trigger(
-            {"trigger": trigger},
-            context=call.context,
-            skip_condition=call.data[ATTR_SKIP_CONDITION],
-        )
+    _LOGGER.info(
+        "Replaying %s (trigger source: %s), skip_condition=%s",
+        entity_id,
+        used_run_id or "custom payload",
+        call.data[ATTR_SKIP_CONDITION],
+    )
 
-        return {
-            "entity_id": entity_id,
-            "run_id": used_run_id,
-            "trigger": trigger,
-        }
+    # Exactly what automation.trigger does internally, but with a real trigger
+    # payload instead of an empty one. The service call's own context is reused
+    # so the replay stays traceable to whoever invoked it.
+    await entity.async_trigger(
+        {"trigger": trigger},
+        context=call.context,
+        skip_condition=call.data[ATTR_SKIP_CONDITION],
+    )
+
+    return {
+        "entity_id": entity_id,
+        "run_id": used_run_id,
+        "trigger": trigger,
+    }
+
+
+def _register_service(hass: HomeAssistant) -> None:
+    """Register the replay service (idempotent)."""
+    if hass.services.has_service(DOMAIN, SERVICE_REPLAY):
+        return
+
+    async def handler(call: ServiceCall) -> ServiceResponse:
+        return await _async_replay(hass, call)
 
     hass.services.async_register(
         DOMAIN,
         SERVICE_REPLAY,
-        _async_replay,
+        handler,
         schema=REPLAY_SCHEMA,
         supports_response=SupportsResponse.OPTIONAL,
     )
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Set up via YAML (`automation_replay:`), if present."""
+    if DOMAIN in config:
+        _register_service(hass)
+    return True
+
+
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Set up from a config entry (the normal path)."""
+    _register_service(hass)
+    return True
+
+
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Unload the config entry and remove the service."""
+    if hass.services.has_service(DOMAIN, SERVICE_REPLAY):
+        hass.services.async_remove(DOMAIN, SERVICE_REPLAY)
     return True
