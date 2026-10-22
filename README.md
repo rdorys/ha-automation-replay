@@ -10,7 +10,7 @@ rejeu d'un événement raté).
 ## Installation (HACS)
 
 1. HACS → Intégrations → menu ⋮ → *Dépôts personnalisés*
-2. Ajouter `rdorys/ha-traces-replay`, catégorie **Integration**
+2. Ajouter `rdorys/ha-automation-replay`, catégorie **Integration**
 3. Installer **Automation Replay**, puis **redémarrer** Home Assistant
 
 ## Utilisation

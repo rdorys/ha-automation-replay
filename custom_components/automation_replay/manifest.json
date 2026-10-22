@@ -1,9 +1,9 @@
 {
   "domain": "automation_replay",
   "name": "Automation Replay",
-  "version": "0.1.3",
-  "documentation": "https://github.com/rdorys/ha-traces-replay",
-  "issue_tracker": "https://github.com/rdorys/ha-traces-replay/issues",
+  "version": "0.1.4",
+  "documentation": "https://github.com/rdorys/ha-automation-replay",
+  "issue_tracker": "https://github.com/rdorys/ha-automation-replay/issues",
   "config_flow": true,
   "dependencies": ["automation", "trace"],
   "codeowners": ["@rdorys"],
