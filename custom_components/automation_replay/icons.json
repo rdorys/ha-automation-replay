@@ -1,0 +1,7 @@
+{
+  "services": {
+    "replay": {
+      "service": "mdi:replay"
+    }
+  }
+}
